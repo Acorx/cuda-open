@@ -1,178 +1,117 @@
 """
-CUDA Open - BitNet Quantizer
+CUDA Open - BitNet Quantizer (ULTRA RAPIDE)
 
 Quantize arrays to BitNet 1.58-bit format.
-Works with numpy arrays - no PyTorch required for basic quantization.
+100% numpy - ZERO dépendance lourde.
 """
 
 import numpy as np
-from typing import Tuple, Dict, Optional
+from typing import Tuple
 
 
 class BitNetQuantizer:
-    """
-    Quantize PyTorch models to BitNet 1.58-bit ternary format.
-    
-    Supports:
-    - Post-training quantization
-    - Quantization-aware training (QAT)
-    - Gradual quantization rampup
-    """
-    
+    """Quantize numpy arrays to BitNet 1.58-bit ternary format."""
+
     @staticmethod
-    def quantize(tensor) -> Tuple:
+    def quantize(data: np.ndarray) -> Tuple[np.ndarray, float]:
         """
-        Quantize a tensor/array to ternary {-1, 0, 1}.
+        Quantize numpy array to packed ternary format.
         
-        Works with both numpy arrays and PyTorch tensors.
-        
+        Args:
+            data: numpy float32 array
+            
         Returns:
-            ternary: Ternary array
-            scale: Quantization scale
+            packed: uint8 array (4 ternary values per byte)
+            scale: float scale factor
         """
-        # Handle both numpy and torch
-        is_torch = False
-        try:
-            import torch
-            if isinstance(tensor, any):
-                is_torch = True
-                device = tensor.device
-                tensor_np = tensor.cpu().numpy()
-        except:
-            tensor_np = np.asarray(tensor)
+        # Ensure float32
+        if data.dtype != np.float32:
+            data = data.astype(np.float32)
         
         # Compute scale
-        scale = np.max(np.abs(tensor_np))
+        scale = float(np.max(np.abs(data)))
         if scale < 1e-8:
             scale = 1.0
         
-        # Threshold for ternary
+        # Threshold for ternary (20% of max)
         threshold = 0.2 * scale
         
-        # Quantize to ternary
-        ternary = np.zeros_like(tensor_np)
-        ternary[tensor_np > threshold] = 1.0
-        ternary[tensor_np < -threshold] = -1.0
+        # Quantize to ternary: -1, 0, 1
+        ternary = np.zeros_like(data, dtype=np.int8)
+        ternary[data > threshold] = 1
+        ternary[data < -threshold] = -1
         
-        # Convert back to torch if needed
-        if is_torch:
-            import torch
-            ternary = torch.from_numpy(ternary).to(device)
-            scale = torch.tensor(scale, device=device)
+        # Pack 4 ternary values per byte
+        packed = BitNetQuantizer._pack_fast(ternary)
         
-        return ternary, scale
+        return packed, scale
     
     @staticmethod
-    def pack_ternary(ternary: any) -> any:
-        """
-        Pack ternary values into uint8 (4 values per byte).
+    def _pack_fast(ternary: np.ndarray) -> np.ndarray:
+        """Fast packing: 4 ternary values → 1 byte"""
+        # Flatten
+        flat = ternary.flatten()
+        n = len(flat)
         
-        Encoding: 0b00=0, 0b01=-1, 0b10=1
-        """
-        ternary_flat = ternary.flatten().cpu().numpy()
-        n = len(ternary_flat)
-        packed_size = (n + 3) // 4
+        # Map -1→1, 0→0, 1→2
+        vals = (flat + 1).astype(np.uint8)
         
-        packed = np.zeros(packed_size, dtype=np.uint8)
+        # Pad to multiple of 4
+        remainder = n % 4
+        if remainder > 0:
+            vals = np.pad(vals, (0, 4 - remainder), mode='constant')
         
-        for i in range(n):
-            val = int(ternary_flat[i])
-            if val == -1:
-                encoded = 0x01
-            elif val == 1:
-                encoded = 0x02
-            else:
-                encoded = 0x00
-            
-            byte_idx = i // 4
-            bit_offset = (i % 4) * 2
-            packed[byte_idx] |= (encoded << bit_offset)
+        # Reshape to groups of 4
+        vals = vals.reshape(-1, 4)
         
-        return torch.from_numpy(packed)
+        # Pack: [a, b, c, d] → a | (b<<2) | (c<<4) | (d<<6)
+        packed = (vals[:, 0] | 
+                  (vals[:, 1] << 2) | 
+                  (vals[:, 2] << 4) | 
+                  (vals[:, 3] << 6)).astype(np.uint8)
+        
+        return packed
     
     @staticmethod
-    def unpack_ternary(packed: any, shape: tuple, device='cpu') -> any:
-        """Unpack ternary values from uint8 format."""
-        packed_np = packed.cpu().numpy()
-        n_elements = int(np.prod(shape))
+    def unpack(packed: np.ndarray, original_size: int, scale: float) -> np.ndarray:
+        """Unpack ternary values back to float32."""
+        # Lookup table
+        lut = np.array([0.0, -1.0, 1.0, 0.0], dtype=np.float32)
         
-        lut = np.array([0, -1, 1, 0], dtype=np.float32)
-        ternary = np.zeros(n_elements, dtype=np.float32)
+        # Unpack each byte into 4 values
+        vals = np.zeros(original_size, dtype=np.float32)
         
-        for i in range(n_elements):
+        for i in range(original_size):
             byte_idx = i // 4
-            bit_offset = (i % 4) * 2
-            encoded = (packed_np[byte_idx] >> bit_offset) & 0x03
-            ternary[i] = lut[encoded]
+            offset = (i % 4) * 2
+            encoded = (packed[byte_idx] >> offset) & 0x03
+            vals[i] = lut[encoded] * scale
         
-        return torch.from_numpy(ternary.reshape(shape)).to(device)
-    
-    @classmethod
-    def quantize_model(cls, model: any, verbose: bool = True) -> Dict:
-        """
-        Quantize entire model to BitNet 1.58-bit.
-        
-        Returns:
-            stats: Quantization statistics
-        """
-        stats = {
-            'total_params': 0,
-            'quantized_params': 0,
-            'original_size_bytes': 0,
-            'compressed_size_bytes': 0,
-            'layers': []
-        }
-        
-        for name, module in model.named_modules():
-            if isinstance(module, nn.Linear):
-                # Quantize weights
-                weight = module.weight.data
-                ternary, scale = cls.quantize_tensor(weight)
-                packed = cls.pack_ternary(ternary)
-                
-                # Store quantized weights
-                module.weight.data = ternary * scale
-                
-                # Update stats
-                num_params = weight.numel()
-                stats['total_params'] += num_params
-                stats['quantized_params'] += packed.numel() * 4  # 4 values per byte
-                stats['original_size_bytes'] += num_params * 4  # FP32
-                stats['compressed_size_bytes'] += packed.numel()
-                
-                stats['layers'].append({
-                    'name': name,
-                    'params': num_params,
-                    'scale': scale.item()
-                })
-        
-        # Compute compression ratio
-        if stats['compressed_size_bytes'] > 0:
-            stats['compression_ratio'] = stats['original_size_bytes'] / stats['compressed_size_bytes']
-        else:
-            stats['compression_ratio'] = 1.0
-        
-        if verbose:
-            print(f"\n{'='*60}")
-            print(f" BitNet Quantization Complete")
-            print(f"{'='*60}")
-            print(f"  Layers quantized: {len(stats['layers'])}")
-            print(f"  Total params: {stats['total_params']:,}")
-            print(f"  Original size: {stats['original_size_bytes']/1024/1024:.1f} MB")
-            print(f"  Compressed size: {stats['compressed_size_bytes']/1024/1024:.1f} MB")
-            print(f"  Compression ratio: {stats['compression_ratio']:.1f}x")
-            print(f"{'='*60}\n")
-        
-        return stats
+        return vals
 
 
-def quantize_model(model: any, **kwargs) -> Dict:
-    """Convenience function to quantize model."""
-    return BitNetQuantizer.quantize_model(model, **kwargs)
+# Fonctions de commodité
+def quantize(data: np.ndarray) -> Tuple[np.ndarray, float]:
+    """Quantize data to BitNet format."""
+    return BitNetQuantizer.quantize(data)
 
 
-def dequantize_model(model: any) -> None:
-    """Restore model to FP32 (if master weights available)."""
-    for name, module in model.named_modules():
-        if hasattr(module, 'master_weight'):
-            module.weight.data = module.master_weight.data.clone()
+def compress(data: np.ndarray) -> dict:
+    """Compress data to BitNet format with metadata."""
+    packed, scale = BitNetQuantizer.quantize(data)
+    return {
+        'packed': packed,
+        'scale': scale,
+        'original_shape': data.shape,
+        'original_dtype': str(data.dtype),
+        'compression_ratio': data.nbytes / packed.nbytes
+    }
+
+
+def decompress(metadata: dict) -> np.ndarray:
+    """Decompress BitNet data back to float32."""
+    return BitNetQuantizer.unpack(
+        metadata['packed'],
+        int(np.prod(metadata['original_shape'])),
+        metadata['scale']
+    ).reshape(metadata['original_shape'])
