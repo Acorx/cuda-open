@@ -46,3 +46,13 @@ models/
 
 # Logs
 *.log
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+.build-env/
+
+# Model files
+model-bitnet-demo/
+*.npz
