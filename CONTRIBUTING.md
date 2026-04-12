@@ -1,102 +1,133 @@
-# Contributing to CUDA Open
+# Contributing to CUDA Open 🤝
 
-Thank you for your interest in contributing to CUDA Open! 🚀
+Thank you for your interest! This guide will help you get started.
 
-## 🚀 Quick Start
+---
+
+## ⚡ Quick Start
 
 ```bash
 # Fork and clone
-git clone https://github.com/YOUR_USERNAME/cuda-open.git
+git clone https://github.com/Acorx/cuda-open.git
 cd cuda-open
 
-# Install in dev mode
-pip install -e .
-
-# Run quick test (lightweight!)
-python3 -c "
-import numpy as np
-from cuda_open.quantizer import BitNetQuantizer
-data = np.random.randn(100).astype(np.float32)
-packed, _ = BitNetQuantizer.quantize(data)
-print(f'✓ Compression: {data.nbytes/packed.nbytes:.1f}x')
-"
+# Install (lightweight!)
+pip install numpy
 ```
+
+---
 
 ## ⚠️ IMPORTANT: Resource Limits
 
-To avoid crashing your PC:
+To ensure all developers can contribute without crashing their machines:
 
-| Limit | Value |
-|-------|-------|
-| Population MAX | 20 |
-| Generations MAX | 10 |
-| Timeout | 30 seconds |
-| Model MAX | gpt2 (124M) |
-| Batch size MAX | 2 |
+| Limit | Value | Why |
+|-------|-------|-----|
+| Population MAX | 20 | Avoid long evolutions |
+| Generations MAX | 10 | Keep runs under 30s |
+| Timeout | 30 seconds | Prevent hangs |
+| Model MAX | gpt2 (124M) | Fit in 2GB RAM |
+| Batch size MAX | 2 | Memory safety |
 
-**Always ask before running anything heavy!**
+**Always test with small configurations first!**
 
-## 🧪 Testing
+---
+
+## 🧪 Running Tests
+
+### Python Tests (No PyTorch required!)
 
 ```bash
-# Test quantizer (lightweight)
+# Test quantizer
 python3 -c "
-import numpy as np
 from cuda_open.quantizer import BitNetQuantizer
+import numpy as np
 
 data = np.random.randn(100).astype(np.float32)
 packed, scale = BitNetQuantizer.quantize(data)
-assert packed.nbytes < data.nbytes
-print('✓ Test passed')
+assert packed.nbytes < data.nbytes, 'Compression failed'
+print(f'✓ Compression: {data.nbytes/packed.nbytes:.1f}x')
 "
 
-# C++ tests
+# Run full demo
+python3 demo.py
+
+# Run benchmark
+python3 benchmark/benchmark_light.py
+```
+
+### C++ Tests
+
+```bash
 mkdir build && cd build
-cmake .. && make -j$(nproc)
+cmake .. -DCUDA_OPEN_BUILD_TESTS=ON
+make -j$(nproc)
 ctest --output-on-failure
 ```
 
-## 📝 Pull Request Process
+---
 
-1. **Fork** the repo
-2. **Create branch**: `git checkout -b feature/my-feature`
-3. **Make changes** (keep it lightweight!)
-4. **Test** your changes
-5. **Commit**: `git commit -m "feat: add my feature"`
-6. **Push**: `git push origin feature/my-feature`
-7. **Open PR** on GitHub
+## 📝 Code Style
 
-## 💡 What We Need Help With
+### Python
+- Use `numpy` for numerical operations
+- Type hints encouraged: `def foo(x: np.ndarray) -> np.ndarray:`
+- Keep imports minimal (lazy imports for heavy deps)
 
-### Priority 1: Code Quality
-- [ ] Type hints everywhere
-- [ ] Docstrings for all functions
-- [ ] Unit tests for PyTorch module
+### C++
+- C++17 standard
+- Use `snake_case` for functions, `PascalCase` for classes
+- Add comments for complex algorithms
 
-### Priority 2: Benchmarks
-- [ ] Benchmark vs PyTorch FP32
-- [ ] Benchmark vs vLLM
-- [ ] Benchmark vs TGI
-
-### Priority 3: Documentation
-- [ ] English translations
-- [ ] Video tutorials
-- [ ] Colab notebooks
-
-### Priority 4: Features
-- [ ] CUDA kernel integration
-- [ ] Multi-GPU support
-- [ ] Model zoo (pre-quantized models)
+---
 
 ## 🎯 Good First Issues
 
-Look for issues labeled `good-first-issue` on GitHub!
+Look for issues labeled `good-first-issue` on GitHub! Examples:
+
+- [ ] Add docstrings to existing functions
+- [ ] Write unit tests for `quantizer.py`
+- [ ] Improve README translations
+- [ ] Add type hints
+
+---
+
+## 🚀 Pull Request Process
+
+1. **Create a branch**: `git checkout -b feature/my-feature`
+2. **Make changes** (keep it lightweight!)
+3. **Test your changes** (use commands above)
+4. **Commit**: `git commit -m "feat: add my feature"`
+5. **Push**: `git push origin feature/my-feature`
+6. **Open a PR** on GitHub
+
+---
+
+## 💡 What We Need Help With
+
+### High Priority
+- [ ] CUDA kernel optimization
+- [ ] Real model benchmarks (7B)
+- [ ] Type hints everywhere
+- [ ] Unit tests
+
+### Medium Priority
+- [ ] Documentation translations (FR→EN)
+- [ ] Video tutorials
+- [ ] Colab notebooks
+
+### Low Priority
+- [ ] Website/landing page
+- [ ] Logo design
+- [ ] Community management
+
+---
 
 ## 💬 Questions?
 
 - **GitHub Issues**: For bugs and features
-- **Discussions**: For questions
-- **Email**: team@cuda-open.dev (future)
+- **GitHub Discussions**: For questions
+- **Email**: arthur@cuda-open.dev
 
 ---
 
