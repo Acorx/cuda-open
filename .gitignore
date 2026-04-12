@@ -1,0 +1,48 @@
+# Build
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.pyc
+
+# Python
+*.egg
+*.so
+*.dylib
+*.dll
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+htmlcov/
+.coverage
+*.gcda
+*.gcno
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment
+.env
+.venv/
+venv/
+
+# Simulation results
+simulation_results/
+*.json
+
+# Large model files
+*.bin
+*.safetensors
+models/
+
+# Logs
+*.log

@@ -1,0 +1,31 @@
+# CUDA Open - Configuration des Limites de Ressources
+
+# ⚠️ LIMITES STRICTES POUR ÉVITER LES CRASHS PC
+
+## Évolutions Neuro-Symboliques
+- Population MAX: 20 (pas plus!)
+- Générations MAX: 10 (pas plus!)
+- Timeout: 30 secondes
+
+## Tests avec Modèles
+- Modèle MAX: gpt2 (124M params)
+- PAS de modèles > 500M sans confirmation
+- Batch size MAX: 2
+- Sequence length MAX: 64
+
+## Mémoire
+- Utiliser CPU uniquement par défaut
+- PAS de chargement multiple de modèles
+- Libérer mémoire après chaque test
+
+## Build
+- Jobs MAX: $(nproc) / 2 (moitié des coeurs)
+- PAS de builds parallèles multiples
+
+---
+
+## Règle d'Or: TOUJOURS demander confirmation avant:
+- Charger un modèle > 100M params
+- Exécuter > 30 secondes
+- Utiliser > 2GB RAM
+- Build complet
