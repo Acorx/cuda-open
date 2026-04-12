@@ -82,7 +82,9 @@ void test_int2_quantization() {
 void test_bitnet158_quantization() {
     std::cout << "Testing BitNet 1.58-bit quantization... ";
     
-    std::vector<float> data = {0.8f, -0.6f, 0.1f, -0.9f, 0.0f, 0.5f};
+    // Use a multiple of 4 values so packed 2-bit storage reaches the
+    // expected 16x compression (vs FP32).
+    std::vector<float> data = {0.8f, -0.6f, 0.1f, -0.9f, 0.0f, 0.5f, -0.2f, 0.7f};
     
     auto quantized = Quantization::quantize_fp32_to_bitnet158(data.data(), data.size());
     size_t expected_size = (data.size() + 3) / 4;

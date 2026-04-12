@@ -16,6 +16,7 @@
 #include <random>
 #include <chrono>
 #include <cmath>
+#include <cassert>
 
 using namespace cuda_open::bitnet;
 
@@ -235,6 +236,47 @@ void estimate_performance() {
     std::cout << "\nNote: BitNet Optimized achieves ~10-20x speedup over GPU" << std::endl;
 }
 
+void test_generation_guards() {
+    print_separator("TEST 6: Generation Guard Rails");
+
+    BitNet7BConfig config;
+    config.vocab_size = 128;
+    config.hidden_size = 64;
+    config.num_layers = 1;
+    config.num_heads = 4;
+    config.head_dim = 16;
+    config.intermediate_size = 128;
+    config.max_seq_len = 8;
+    config.num_threads = 2;
+
+    BitNet7BEngine engine(config);
+
+    // Empty prompt should raise.
+    bool empty_prompt_threw = false;
+    try {
+        (void)engine.generate({}, 2);
+    } catch (const std::invalid_argument&) {
+        empty_prompt_threw = true;
+    }
+    assert(empty_prompt_threw);
+
+    // Invalid token id should raise.
+    bool bad_token_threw = false;
+    try {
+        (void)engine.generate({config.vocab_size + 1}, 1);
+    } catch (const std::out_of_range&) {
+        bad_token_threw = true;
+    }
+    assert(bad_token_threw);
+
+    // Generation should stop at max sequence length.
+    std::vector<int> near_limit = {1, 2, 3, 4, 5, 6, 7};
+    auto out = engine.generate(near_limit, 10, 1.0f, 999);
+    assert(out.size() == static_cast<size_t>(config.max_seq_len));
+
+    std::cout << "Guard rail tests PASSED" << std::endl;
+}
+
 int main() {
     std::cout << std::endl;
     std::cout << std::string(70, '=') << std::endl;
@@ -258,6 +300,9 @@ int main() {
         
         // Test 5: Performance estimation
         estimate_performance();
+
+        // Test 6: Guard rails / input validation
+        test_generation_guards();
         
         // Summary
         print_separator("SUMMARY");
@@ -269,6 +314,7 @@ int main() {
         std::cout << "  ✓ BitNet quantization: 16x compression" << std::endl;
         std::cout << "  ✓ Memory efficiency: 7B fits in 1.75 GB" << std::endl;
         std::cout << "  ✓ Performance: 10-20x speedup estimated" << std::endl;
+        std::cout << "  ✓ Input guard rails: validated" << std::endl;
         std::cout << "\nThe BitNet 7B engine is production-ready!" << std::endl;
         
         return 0;

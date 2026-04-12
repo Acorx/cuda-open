@@ -25,6 +25,7 @@
 #include <iostream>
 #include <algorithm>
 #include <chrono>
+#include <stdexcept>
 
 namespace cuda_open {
 namespace bitnet {
@@ -169,6 +170,11 @@ public:
     
     BitNetLinear(int in_f, int out_f, bool use_bias = false)
         : in_features(in_f), out_features(out_f), use_bias(use_bias), scale(1.0f) {
+        // Keep a valid packed buffer even before loading real weights.
+        // This avoids undefined reads during tests that exercise inference
+        // with simulated/uninitialized models.
+        size_t packed_size = (static_cast<size_t>(in_features) * out_features + 3) / 4;
+        weights_packed.resize(packed_size, 0);
         if (use_bias) {
             bias.resize(out_f, 0.0f);
         }
@@ -472,19 +478,34 @@ public:
         float temperature = 1.0f,
         int top_k = 50
     ) {
+        if (prompt_tokens.empty()) {
+            throw std::invalid_argument("prompt_tokens must not be empty");
+        }
+        if (max_new_tokens <= 0) {
+            return prompt_tokens;
+        }
+
         std::cout << "\nGenerating (max " << max_new_tokens << " tokens)..." << std::endl;
         
         std::vector<int> generated = prompt_tokens;
-        int seq_pos = 0;
+        int seq_pos = static_cast<int>(generated.size()) - 1;
+        int effective_top_k = std::clamp(top_k, 1, config.vocab_size);
+        float effective_temperature = std::max(temperature, 1e-6f);
         
         auto start_time = std::chrono::high_resolution_clock::now();
         
         for (int i = 0; i < max_new_tokens; ++i) {
+            if (seq_pos >= config.max_seq_len - 1) {
+                std::cout << "  Reached max_seq_len=" << config.max_seq_len
+                          << ", stopping generation early." << std::endl;
+                break;
+            }
+
             // Forward pass
             auto logits = forward(generated, seq_pos);
             
             // Sample next token
-            int next_token = sample_token(logits, temperature, top_k);
+            int next_token = sample_token(logits, effective_temperature, effective_top_k);
             generated.push_back(next_token);
             seq_pos++;
             
@@ -505,6 +526,9 @@ private:
         
         // Get last token embedding
         int last_token = tokens.back();
+        if (last_token < 0 || last_token >= config.vocab_size) {
+            throw std::out_of_range("token id out of vocabulary range");
+        }
         std::vector<float> hidden_state(
             embedding.begin() + last_token * d,
             embedding.begin() + (last_token + 1) * d
