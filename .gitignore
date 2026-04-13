@@ -4,12 +4,38 @@ dist/
 *.egg-info/
 __pycache__/
 *.pyc
+*.o
+*.so
+*.a
+*.exe
+*.dll
+
+# Binaries
+neuro_edge
+neuro_edge.cpp
+proof_neuro
+proof_neuro.cpp
+swarm_controller_compiled
+swarm_controller_compiled.cpp
+simulation/compiled_*
+simulation/demo_*
+neuro_decoder_compiled.cpp
 
 # Python
-*.egg
-*.so
-*.dylib
-*.dll
+.env
+.venv/
+venv/
+.build-env/
+
+# Data & Logs
+*.log
+*.csv
+*_results.json
+model-bitnet-demo/
+
+# OS
+.DS_Store
+Thumbs.db
 
 # IDE
 .vscode/
@@ -17,42 +43,8 @@ __pycache__/
 *.swp
 *~
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Test coverage
+# Coverage
 htmlcov/
 .coverage
 *.gcda
 *.gcno
-
-# Jupyter
-.ipynb_checkpoints/
-
-# Environment
-.env
-.venv/
-venv/
-
-# Simulation results
-simulation_results/
-*.json
-
-# Large model files
-*.bin
-*.safetensors
-models/
-
-# Logs
-*.log
-
-# Build artifacts
-dist/
-build/
-*.egg-info/
-.build-env/
-
-# Model files
-model-bitnet-demo/
-*.npz
