@@ -25,26 +25,33 @@ jobs:
           python3 -c "
           import numpy as np
           import sys
-          sys.path.insert(0, 'src') # Fix: Point to src/ directory
+          sys.path.insert(0, 'src') # Point to src/ directory
           from cuda_open.quantizer import BitNetQuantizer
 
           # Test 1: Basic quantization
           data = np.random.randn(100).astype(np.float32)
-          ternary, scale = BitNetQuantizer.quantize(data)
+          packed, scale = BitNetQuantizer.quantize(data)
 
-          # Check ternary values
-          unique = set(np.unique(ternary))
-          assert unique.issubset({-1.0, 0.0, 1.0}), f'Bad values: {unique}'
-          print(f'✓ Test 1: Ternary OK (values: {unique})')
+          # Verify return types
+          assert packed.dtype == np.uint8, 'Packed should be uint8'
+          print(f'✓ Test 1: Quantization returns packed uint8 array')
 
           # Test 2: Scale is reasonable
           assert 0.01 < scale < 10.0, f'Scale out of range: {scale}'
           print(f'✓ Test 2: Scale OK ({scale:.3f})')
 
-          # Test 3: Compression
-          packed = np.packbits((ternary + 1).astype(np.int8))
-          assert len(packed) < len(data)
-          print(f'✓ Test 3: Compression OK')
+          # Test 3: Compression (4 values per byte)
+          expected_size = (len(data) + 3) // 4
+          assert len(packed) == expected_size, f'Size mismatch: {len(packed)} vs {expected_size}'
+          print(f'✓ Test 3: Compression ratio is exactly 4x (approx 16x bits)')
+
+          # Test 4: Unpacking consistency
+          reconstructed = BitNetQuantizer.unpack(packed, len(data), scale)
+          assert len(reconstructed) == len(data)
+          # Check that values are scaled ternary {-scale, 0, scale}
+          unique_vals = set(np.unique(reconstructed / scale))
+          assert unique_vals.issubset({-1.0, 0.0, 1.0}), f'Bad ternary values: {unique_vals}'
+          print(f'✓ Test 4: Unpacked values are valid ternary {{-1, 0, 1}}')
 
           print('\n✓ All quantization tests passed!')
           "
