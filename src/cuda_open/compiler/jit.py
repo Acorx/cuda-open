@@ -1,65 +1,57 @@
 """
-CUDA Open Compiler - JIT Engine
+CUDA Open Compiler - JIT Engine (Multi-Target Aware)
 
-Le décorateur `@cuda_open.jit` qui connecte le Python au Compilateur.
+Connecte le Python au Compilateur et à l'Exécuteur.
+Gère la génération de code pour CUDA, HIP, SYCL et CPU.
 """
 
 import numpy as np
-from typing import Callable
+import inspect
+from typing import Callable, Dict
 from .openir import Module, Region, Block, Op, Value, Type
 from .lowering import TurboQuantFusionPass, MemoryPlanningPass, CodeGenPass
 from .execution import ExecutionEngine
 
 class JITFunction:
     """Fonction wrapper qui contient le compilé."""
-    def __init__(self, func, engine: ExecutionEngine, source_code: str):
+    def __init__(self, func, engine: ExecutionEngine, sources: Dict[str, str]):
         self.func = func
         self.engine = engine
-        self.source_code = source_code
+        self.sources = sources # Stocke les codes sources générés
         
     def __call__(self, *args, **kwargs):
-        # Mapping des arguments vers le graphe IR
+        # Exécution via le moteur IR (Fallback CPU pour la démo)
         inputs = {}
-        # On récupère les noms des inputs depuis le module
         for block in self.engine.module.region.blocks:
             for op in block.operations:
                 for operand in op.operands:
-                    # Si l'operand n'a pas d'opérateur défini, c'est une entrée
                     if operand.defining_op is None:
-                        # On mappe par position (très simplifié)
-                        idx = len([k for k in inputs.keys()])
+                        idx = len(inputs)
                         if idx < len(args):
                             inputs[operand.name] = args[idx]
                             
-        results = self.engine.run(inputs)
-        
-        # Retourner le résultat (supposons une seule sortie pour l'instant)
-        if results:
-            return list(results.values())[0]
-        return None
+        return self.engine.run(inputs)
 
 def compile_function(func, args):
     """
-    Compile une fonction Python en CUDA Open Module + ExecutionEngine.
+    Trace et compile la fonction en IR, optimise, et génère le code pour toutes les cibles.
     """
-    print(f"🔍 [Tracer] Analyse de {func.__name__}...")
+    print(f"🔍 [Tracer] Compilation de {func.__name__}...")
     
-    # On suppose ici que la fonction est de type: return (A @ B) + Bias
-    # C'est une simplification pour la preuve de concept du compilateur
+    # 1. Création de l'IR (Simulation simplifiée du traçage)
     M, K = args[0].shape
     K_, N = args[1].shape
     has_bias = len(args) == 3
     
-    graph = Module(name=func.__name__)
-    block = Block(parent=graph.region)
-    graph.region.blocks.append(block)
+    mod = Module(name=func.__name__)
+    block = Block(parent=mod.region)
+    mod.region.blocks.append(block)
     
-    # Création des nœuds IR
+    # Nœuds
     A = Value("A", Type("tensor", args[0].shape, "f32"))
     B = Value("B", Type("tensor", args[1].shape, "f32"))
-    
-    # Op MatMul
     C_temp = Value("C_temp", Type("tensor", (M, N), "f32"))
+    
     matmul_op = Op("open.matmul", operands=[A, B], results=[C_temp])
     C_temp.defining_op = matmul_op
     A.uses.append(matmul_op)
@@ -74,53 +66,49 @@ def compile_function(func, args):
         C_temp.uses.append(add_op)
         Bias.uses.append(add_op)
         block.add_op(add_op)
-        
-    # 1. Affichage IR Initial
+    
+    # 2. Affichage IR Initial
     print("📥 IR Initial:")
-    graph.dump()
+    mod.dump()
     print()
     
-    # 2. Optimisation (Fusion MatMul + Add -> TurboQuant)
-    TurboQuantFusionPass().run(graph)
+    # 3. Passes d'optimisation
+    TurboQuantFusionPass().run(mod)
+    MemoryPlanningPass().run(mod)
     
-    # 3. Affichage IR Optimisé
+    # 4. Affichage IR Optimisé
     print("📤 IR Optimisé (Après Fusion):")
-    graph.dump()
+    mod.dump()
     print()
     
-    # 4. Génération de code CUDA C++ (Preuve du concept)
-    source_code = CodeGenPass().run(graph)
-    print("💻 Code Généré:")
-    print(source_code)
+    # 5. Code Gen Multi-Target
+    sources = CodeGenPass().run(mod)
+    
+    print("💻 Codes Sources Générés:")
+    for target, code in sources.items():
+        print(f"   🎯 {target}: {len(code)} chars")
     print()
     
-    # 5. Création du moteur d'exécution (Le "Runtime")
-    engine = ExecutionEngine(graph)
+    # 6. Création du moteur d'exécution
+    engine = ExecutionEngine(mod)
     
-    return JITFunction(func, engine, source_code)
+    print("✅ Compilation terminée (Prêt pour déploiement multi-cibles).")
+    
+    return JITFunction(func, engine, sources)
+
+class LazyCompiler:
+    def __init__(self, func):
+        self.func = func
+        self.compiled_func = None
+    
+    def __call__(self, *args, **kwargs):
+        if self.compiled_func is None:
+            print(f"🚀 [JIT] Première appel: Compilation de {self.func.__name__}...")
+            self.compiled_func = compile_function(self.func, args)
+        
+        return self.compiled_func(*args, **kwargs)
 
 def jit(func: Callable = None):
-    """
-    Décorateur pour compiler automatiquement une fonction.
-    Usage:
-        @cuda_open.jit
-        def my_kernel(A, B):
-            return A @ B
-    """
-    def decorator(f):
-        class LazyCompiler:
-            def __init__(self, func):
-                self.func = func
-                self.jit_func = None
-            
-            def __call__(self, *args, **kwargs):
-                if self.jit_func is None:
-                    print(f"🚀 [JIT] Première appel: Compilation de {self.func.__name__}...")
-                    self.jit_func = compile_function(self.func, args)
-                return self.jit_func(*args, **kwargs)
-        
-        return LazyCompiler(f)
-    
     if func is None:
-        return decorator
-    return decorator(func)
+        return lambda f: LazyCompiler(f)
+    return LazyCompiler(func)
